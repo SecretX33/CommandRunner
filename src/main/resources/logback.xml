@@ -1,0 +1,44 @@
+<configuration>
+    <shutdownHook class="ch.qos.logback.core.hook.DefaultShutdownHook"/>
+
+    <if condition='property("CR_DEVELOPMENT").equalsIgnoreCase("true")'>
+        <then>
+            <appender name="STDOUT" class="ch.qos.logback.core.ConsoleAppender">
+                <encoder>
+                    <pattern>%d{YYYY-MM-dd} %d{HH:mm:ss} %-5level [%t] %c{1}: %msg%n</pattern>
+                    <charset>UTF-8</charset>
+                </encoder>
+            </appender>
+
+            <root level="debug">
+                <appender-ref ref="STDOUT"/>
+            </root>
+        </then>
+        <else>
+            <appender name="STDOUT" class="ch.qos.logback.core.ConsoleAppender">
+                <filter class="com.github.secretx33.commandrunner.filter.InverseThresholdFilter">
+                    <level>WARN</level>
+                </filter>
+                <encoder>
+                    <pattern>%msg%n</pattern>
+                    <charset>UTF-8</charset>
+                </encoder>
+            </appender>
+
+            <appender name="STDERR" class="ch.qos.logback.core.ConsoleAppender">
+                <filter class="ch.qos.logback.classic.filter.ThresholdFilter">
+                    <level>WARN</level>
+                </filter>
+                <encoder>
+                    <pattern>%-5level: %msg%n</pattern>
+                    <charset>UTF-8</charset>
+                </encoder>
+            </appender>
+
+            <root level="info">
+                <appender-ref ref="STDOUT"/>
+                <appender-ref ref="STDERR"/>
+            </root>
+        </else>
+    </if>
+</configuration>
