@@ -16,7 +16,7 @@
         </then>
         <else>
             <appender name="STDOUT" class="ch.qos.logback.core.ConsoleAppender">
-                <filter class="com.github.secretx33.commandrunner.filter.InverseThresholdFilter">
+                <filter class="com.github.secretx33.commandrunner.logging.InverseThresholdFilter">
                     <level>WARN</level>
                 </filter>
                 <encoder>

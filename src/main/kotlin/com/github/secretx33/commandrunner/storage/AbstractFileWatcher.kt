@@ -12,7 +12,6 @@ import java.io.IOException
 import java.nio.file.ClosedWatchServiceException
 import java.nio.file.FileSystem
 import java.nio.file.FileVisitResult
-import java.nio.file.Files
 import java.nio.file.LinkOption
 import java.nio.file.Path
 import java.nio.file.SimpleFileVisitor
@@ -27,6 +26,7 @@ import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.Executors
 import java.util.concurrent.atomic.AtomicReference
 import kotlin.io.path.ExperimentalPathApi
+import kotlin.io.path.isDirectory
 import kotlin.io.path.isRegularFile
 import kotlin.io.path.visitFileTree
 
@@ -148,7 +148,7 @@ abstract class AbstractFileWatcher (
                             // handle recursive directory creation
                             if (autoRegisterNewSubDirectories && event.kind() == ENTRY_CREATE) {
                                 try {
-                                    if (Files.isDirectory(file, LinkOption.NOFOLLOW_LINKS)) {
+                                    if (file.isDirectory(LinkOption.NOFOLLOW_LINKS)) {
                                         registerRecursively(file)
                                     }
                                 } catch (e: IOException) {

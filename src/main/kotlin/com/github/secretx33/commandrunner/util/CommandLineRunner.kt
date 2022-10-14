@@ -1,5 +1,7 @@
-package com.github.secretx33.commandrunner
+package com.github.secretx33.commandrunner.util
 
+import com.github.secretx33.commandrunner.CURRENT_OS
+import com.github.secretx33.commandrunner.OSType
 import com.github.secretx33.commandrunner.model.ParsedCommand
 import org.slf4j.Logger
 import org.slf4j.LoggerFactory
@@ -23,6 +25,11 @@ class CommandLineRunner(
             .start()
 
         process.use { it.waitFor() }
+    }
+
+    private val commandPrefixPerOS: List<String> get() = when (CURRENT_OS) {
+        OSType.WINDOWS -> listOf("cmd", "/c")
+        OSType.MAC_OS, OSType.LINUX -> listOf("/bin/bash", "-c")
     }
 
     private fun Process.use(block: (Process) -> Unit) {
@@ -50,9 +57,4 @@ class CommandLineRunner(
     private companion object {
         val log: Logger = LoggerFactory.getLogger(this::class.java)
     }
-}
-
-private val commandPrefixPerOS: List<String> get() = when (CURRENT_OS) {
-    OSType.WINDOWS -> listOf("cmd", "/c")
-    OSType.MAC_OS, OSType.LINUX -> listOf("/bin/bash", "-c")
 }

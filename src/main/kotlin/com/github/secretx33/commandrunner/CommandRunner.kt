@@ -5,15 +5,25 @@ import com.github.secretx33.commandrunner.exception.exitApp
 import com.github.secretx33.commandrunner.model.Command
 import com.github.secretx33.commandrunner.model.ParsedCommand
 import com.github.secretx33.commandrunner.model.Settings
+import com.github.secretx33.commandrunner.storage.FileModificationType
 import com.github.secretx33.commandrunner.storage.FileWatcher
+import com.github.secretx33.commandrunner.util.ANSI_GREEN
+import com.github.secretx33.commandrunner.util.ANSI_PURPLE
+import com.github.secretx33.commandrunner.util.ANSI_RESET
+import com.github.secretx33.commandrunner.util.CommandLineRunner
+import com.github.secretx33.commandrunner.util.getTextResource
 import com.github.secretx33.commandrunner.util.isHelp
+import com.github.secretx33.commandrunner.util.suffixIfNotEmpty
+import com.github.secretx33.commandrunner.util.unsyncLazy
 import io.github.azagniotov.matcher.AntPathMatcher
 import org.slf4j.LoggerFactory
 import java.io.File
 import java.lang.invoke.MethodHandles
 import java.nio.file.Path
 import java.time.Duration
+import kotlin.io.path.absolute
 import kotlin.io.path.extension
+import kotlin.io.path.fileSize
 import kotlin.io.path.name
 import kotlin.io.path.nameWithoutExtension
 import kotlin.io.path.pathString
@@ -47,8 +57,8 @@ private fun execute(args: Array<String>) {
 
     val settings = buildSettings(options)
     initiateFileWatcher(settings)
+    printGreetings(settings)
 
-    log.info("==> Now monitoring folder for changes '${settings.folder}'")
     fileWatcher.join()
 }
 
@@ -59,11 +69,9 @@ fun initiateFileWatcher(settings: Settings) {
         .build()
 
     fileWatcher = FileWatcher(settings.folder)
-    fileWatcher.withRootWatcher { path, fileModificationType ->
-        val normalizedPath = path.pathString.normalizeWindowsPathSeparator()
 
-        if (fileModificationType !in settings.watchedModificationTypes
-            || (settings.hasFilter && settings.filter.none { pathMatcher.isMatch(it, normalizedPath) })) return@withRootWatcher
+    fileWatcher.withRootWatcher { path, fileModificationType ->
+        if (!shouldRun(path, fileModificationType, settings, pathMatcher)) return@withRootWatcher
 
         settings.commands.forEach {
             log.debug("Executing command '{}' for file '{}'", it.value, path)
@@ -73,22 +81,55 @@ fun initiateFileWatcher(settings: Settings) {
     }
 }
 
+/**
+ * Analyses the file modification type, the file and current settings to decide if this file modification
+ * should trigger the commands.
+ */
+private fun shouldRun(
+    path: Path,
+    fileModificationType: FileModificationType,
+    settings: Settings,
+    pathMatcher: AntPathMatcher,
+): Boolean {
+    val normalizedPath by unsyncLazy { path.pathString.normalizeWindowsPathSeparator() }
+    val fileSize by unsyncLazy { settings.folder.resolve(path).fileSize() }
+
+    return fileModificationType in settings.watchedModificationTypes
+        && (settings.isRecursive || path.parent == null)
+        && (!settings.hasFilter || settings.filter.any { pathMatcher.isMatch(it, normalizedPath) })
+        && (!fileModificationType.isCreateOrModify || settings.fileMinSizeBytes == null || fileSize >= settings.fileMinSizeBytes)
+        && (!fileModificationType.isCreateOrModify || settings.fileMaxSizeBytes == null || fileSize <= settings.fileMaxSizeBytes)
+}
+
 private fun parseCommand(
     command: Command,
     file: Path,
-    settings: Settings
+    settings: Settings,
 ): ParsedCommand {
-    val rawCommand = command.value
-    val parsedCommand = rawCommand
+    val absoluteFile = settings.folder.resolve(file).absolute()
+    val absolutePath = absoluteFile.parent?.pathString.orEmpty()
+    val relativePath = file.parent?.pathString.orEmpty()
+
+    val parsedCommand = command.value
         .replace("{filename}", file.name)
         .replace("{filenamenoextension}", file.nameWithoutExtension)
         .replace("{fileextension}", file.extension)
-        .replace("{filepath}", settings.folder.resolve(file).pathString)
-        .replace("{path}", settings.folder.pathString)
+        .replace("{filepath}", absoluteFile.pathString)
+        .replace("{path}", absolutePath)
+        .replace("{path+}", absolutePath.suffixIfNotEmpty(File.separator))
         .replace("{relativefilepath}", file.pathString)
-        .replace("{relativepath}", file.parent?.pathString.orEmpty())
+        .replace("{relativepath}", relativePath)
+        .replace("{relativepath+}", relativePath.suffixIfNotEmpty(File.separator))
         .replace("{pathseparator}", File.separator)
     return ParsedCommand(parsedCommand)
+}
+
+private fun printGreetings(settings: Settings) {
+    val banner = "${ANSI_RESET}${getTextResource("banner.txt")}${ANSI_RESET}${System.lineSeparator().repeat(2)}"
+    val monitoredFolder = "${ANSI_PURPLE}==> Now monitoring folder for changes: ${ANSI_GREEN}'${settings.folder}'${ANSI_RESET}${System.lineSeparator()}"
+    val status = "${settings.oneLineSummary()}${System.lineSeparator()}"
+
+    log.info("$banner$monitoredFolder$status")
 }
 
 private fun String.normalizeWindowsPathSeparator(): String = when (CURRENT_OS) {

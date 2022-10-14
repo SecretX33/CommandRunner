@@ -1,4 +1,4 @@
-package com.github.secretx33.commandrunner.filter
+package com.github.secretx33.commandrunner.logging
 
 import ch.qos.logback.classic.Level
 import ch.qos.logback.classic.spi.ILoggingEvent

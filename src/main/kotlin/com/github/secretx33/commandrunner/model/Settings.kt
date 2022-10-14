@@ -1,6 +1,10 @@
 package com.github.secretx33.commandrunner.model
 
 import com.github.secretx33.commandrunner.storage.FileModificationType
+import com.github.secretx33.commandrunner.util.ANSI_CYAN
+import com.github.secretx33.commandrunner.util.ANSI_RESET
+import com.github.secretx33.commandrunner.util.bytesToHumanReadableSize
+import com.github.secretx33.commandrunner.util.pluralize
 import java.nio.file.Path
 
 data class Settings(
@@ -10,6 +14,8 @@ data class Settings(
     val filter: Set<String>,
     val ignoreCase: Boolean,
     val watchedModificationTypes: Set<FileModificationType>,
+    val fileMinSizeBytes: Long?,
+    val fileMaxSizeBytes: Long?,
 ) {
     init {
         require(folder.isAbsolute) { "folder must be an absolute path" }
@@ -17,4 +23,16 @@ data class Settings(
     }
 
     val hasFilter = filter.isNotEmpty()
+
+    fun oneLineSummary(): String =
+        buildString {
+            append("${ANSI_CYAN}Number of commands: ${commands.size}")
+            if (!isRecursive) append(". Monitoring only provided path (non-recursive)")
+            if (hasFilter) append(". Using ${filter.size} ${"filter".pluralize(filter.size)}")
+            if (ignoreCase) append(" (ignoring case)")
+            if (fileMinSizeBytes != null) append(". Min file size: ${fileMinSizeBytes.bytesToHumanReadableSize()}")
+            if (fileMaxSizeBytes != null) append(". Max file size: ${fileMaxSizeBytes.bytesToHumanReadableSize()}")
+            append(". Watching for: ${watchedModificationTypes.joinToString { it.displayName }}")
+            append(ANSI_RESET)
+        }
 }
