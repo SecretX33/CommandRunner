@@ -126,10 +126,10 @@ private fun parseCommand(
 
 private fun printGreetings(settings: Settings) {
     val banner = "${ANSI_RESET}${getTextResource("banner_logo.txt")}${System.lineSeparator().repeat(2)}"
-    val monitoredFolder = "${ANSI_PURPLE}==> Now monitoring folder for changes: ${ANSI_GREEN}'${settings.folder}'${ANSI_RESET}${System.lineSeparator()}"
-    val status = "${settings.oneLineSummary()}${System.lineSeparator()}"
+    val monitoringStatus = "${ANSI_PURPLE}==> Now monitoring folder for changes: ${ANSI_GREEN}'${settings.folder}'${ANSI_RESET}${System.lineSeparator()}"
+    val optionsDescription = "${settings.oneLineSummary()}${System.lineSeparator()}"
 
-    log.info("$banner$monitoredFolder$status")
+    log.info("$banner$monitoringStatus$optionsDescription")
 }
 
 private fun String.normalizeWindowsPathSeparator(): String = when (CURRENT_OS) {

@@ -44,7 +44,6 @@ fun parseArgs(args: Array<String>): OptionSet {
         accepts("fc", "Execute commands on file creation (if not specified, the commands will run only for file creation and modification)")
         accepts("fm", "Execute commands on file modification (if not specified, the commands will run only for file creation and modification)")
         accepts("fd", "Execute commands on file deletion (if not specified, the commands will run only for file creation and modification)")
-        allowsUnrecognizedOptions()
     }
 
     return parser.parse(*args).also {

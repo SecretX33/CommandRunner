@@ -1,12 +1,5 @@
 package com.github.secretx33.commandrunner.storage
 
-import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Job
-import kotlinx.coroutines.asCoroutineDispatcher
-import kotlinx.coroutines.cancelAndJoin
-import kotlinx.coroutines.job
-import kotlinx.coroutines.launch
-import kotlinx.coroutines.runBlocking
 import org.slf4j.LoggerFactory
 import java.io.IOException
 import java.nio.file.ClosedWatchServiceException
@@ -22,6 +15,7 @@ import java.nio.file.WatchEvent
 import java.nio.file.WatchKey
 import java.nio.file.WatchService
 import java.nio.file.attribute.BasicFileAttributes
+import java.util.concurrent.CompletableFuture
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.Executors
 import java.util.concurrent.atomic.AtomicReference
@@ -36,7 +30,6 @@ import kotlin.io.path.visitFileTree
  * @property autoRegisterNewSubDirectories Boolean If this file watcher should discover directories
  */
 @OptIn(ExperimentalPathApi::class)
-@Suppress("BlockingMethodInNonBlockingContext")
 abstract class AbstractFileWatcher (
     fileSystem: FileSystem,
     private val autoRegisterNewSubDirectories: Boolean,
@@ -55,14 +48,14 @@ abstract class AbstractFileWatcher (
     private val keys = ConcurrentHashMap<WatchKey, Path>()
 
     /**
-     * The coroutine dispatcher responsible for listen for the file events.
+     * The executor responsible handling file events processing.
      */
-    private val coroutineDispatcher = Executors.newFixedThreadPool(2).asCoroutineDispatcher()
+    private val taskExecutor = Executors.newFixedThreadPool(2)
 
     /**
-     * The coroutine currently being used to wait for and process watch events.
+     * The thread currently being used to wait for and process watch events.
      * */
-    private val processingCoroutine = AtomicReference<Job?>()
+    private val processingTask = AtomicReference<CompletableFuture<Void>?>()
 
     /**
      * Register a watch key in the given directory.
@@ -113,8 +106,9 @@ abstract class AbstractFileWatcher (
      */
     @Suppress("UNCHECKED_CAST")
     fun runEventProcessingLoop() {
-        CoroutineScope(coroutineDispatcher).launch {
-            check(processingCoroutine.compareAndSet(null, coroutineContext.job)) { "A coroutine is already processing events for this watcher." }
+        taskExecutor.execute {
+            val task = CompletableFuture<Void>()
+            check(processingTask.compareAndSet(null, task)) { "A coroutine is already processing events for this watcher." }
 
             while (true) {
                 // poll for a key from the watch service
@@ -140,7 +134,7 @@ abstract class AbstractFileWatcher (
                         ?.let { file ->
                             // if the file is a regular file, send the event on to be processed
                             if (file.isRegularFile()) {
-                                launch {
+                                taskExecutor.execute {
                                     processEvent(event, file, event.kind().modificationType)
                                 }
                             }
@@ -162,32 +156,28 @@ abstract class AbstractFileWatcher (
                 val valid = key.reset()
                 if (!valid) keys.remove(key)
             }
-            processingCoroutine.compareAndSet(coroutineContext.job, null)
+            processingTask.compareAndSet(task, null)
         }
     }
 
     fun join() {
-        val task = processingCoroutine.get()!!
-        runBlocking {
-            log.debug("Joining processing coroutine from ${this@AbstractFileWatcher::class.simpleName} now...")
-            task.join()
-        }
+        val task = processingTask.get()!!
+        log.debug("Joining file event processing loop from ${this@AbstractFileWatcher::class.simpleName} now...")
+        task.get()
     }
 
     override fun close() {
-        val finalizationTasks = listOf(
-            { watchService.close() },
-            { coroutineDispatcher.close() },
-            suspend { processingCoroutine.getAndSet(null)?.cancelAndJoin() },
-        )
-        runBlocking {
-            finalizationTasks.forEachIndexed { index, task ->
-                try {
-                    task.invoke()
-                } catch (e: Exception) {
-                    log.error("An exception has occurred when running finalize task number ${index + 1}. Message: ${e.message}", e)
-                }
-            }
+        try {
+            watchService.close()
+        } catch (e: IOException) {
+            log.error("An exception has occurred when closing File Watch Service. Message: ${e.message}", e.takeIf { log.isDebugEnabled })
+        }
+
+        try {
+            taskExecutor.shutdownNow()
+        } catch (e: SecurityException) {
+            log.error("Could not correctly finalize tasks scheduled by File Watch Service task executor because we somehow don't have permission", e)
+            throw e
         }
     }
 }

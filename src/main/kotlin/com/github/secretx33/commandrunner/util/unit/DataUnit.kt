@@ -36,32 +36,32 @@ package com.github.secretx33.commandrunner.util.unit
  * @since 5.1
  * @see DataSize
  */
-enum class DataUnit(private val suffix: String, private val size: DataSize) {
+enum class DataUnit(private val suffixes: Set<String>, private val size: DataSize) {
 
     /**
      * Bytes, represented by suffix `B`.
      */
-    BYTES("B", DataSize.ofBytes(1)),
+    BYTES(setOf("B"), DataSize.ofBytes(1)),
 
     /**
      * Kilobytes, represented by suffix `KB`.
      */
-    KILOBYTES("KB", DataSize.ofKilobytes(1)),
+    KILOBYTES(setOf("K", "KB"), DataSize.ofKilobytes(1)),
 
     /**
      * Megabytes, represented by suffix `MB`.
      */
-    MEGABYTES("MB", DataSize.ofMegabytes(1)),
+    MEGABYTES(setOf("M", "MB"), DataSize.ofMegabytes(1)),
 
     /**
      * Gigabytes, represented by suffix `GB`.
      */
-    GIGABYTES("GB", DataSize.ofGigabytes(1)),
+    GIGABYTES(setOf("G", "GB"), DataSize.ofGigabytes(1)),
 
     /**
      * Terabytes, represented by suffix `TB`.
      */
-    TERABYTES("TB", DataSize.ofTerabytes(1));
+    TERABYTES(setOf("T", "TB"), DataSize.ofTerabytes(1));
 
     fun size(): DataSize {
         return size
@@ -75,7 +75,8 @@ enum class DataUnit(private val suffix: String, private val size: DataSize) {
          * @return the [DataUnit] matching the specified `suffix`
          * @throws IllegalArgumentException if the suffix does not match the suffix of this enum's constants
          */
-        fun fromSuffix(suffix: String): DataUnit = values().firstOrNull { it.suffix.equals(suffix, ignoreCase = true) }
-            ?: throw IllegalArgumentException("Unknown data unit suffix '$suffix'")
+        fun fromSuffix(suffix: String): DataUnit = values().firstOrNull { dataUnit ->
+            dataUnit.suffixes.any { it.equals(suffix, ignoreCase = true) }
+        } ?: throw IllegalArgumentException("Unknown data unit suffix '$suffix'")
     }
 }
