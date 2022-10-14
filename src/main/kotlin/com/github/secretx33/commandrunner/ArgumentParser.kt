@@ -4,10 +4,12 @@ import com.github.secretx33.commandrunner.exception.exitApp
 import com.github.secretx33.commandrunner.model.Command
 import com.github.secretx33.commandrunner.model.Settings
 import com.github.secretx33.commandrunner.storage.FileModificationType
+import com.github.secretx33.commandrunner.util.ANSI_RESET
 import com.github.secretx33.commandrunner.util.FileSizeConverter
 import com.github.secretx33.commandrunner.util.getList
 import com.github.secretx33.commandrunner.util.getOrElse
 import com.github.secretx33.commandrunner.util.getOrNull
+import com.github.secretx33.commandrunner.util.getTextResource
 import com.github.secretx33.commandrunner.util.isHelp
 import com.github.secretx33.commandrunner.util.unit.DataSize
 import joptsimple.OptionParser
@@ -48,7 +50,8 @@ fun parseArgs(args: Array<String>): OptionSet {
     return parser.parse(*args).also {
         // Print help if asked
         if (it.isHelp) {
-            println("Command Runner help${System.lineSeparator().repeat(2)}")
+            val helpBanner = "$ANSI_RESET${getTextResource("banner_help.txt")}${System.lineSeparator()}"
+            println(helpBanner)
             parser.printHelpOn(System.out)
         }
     }
