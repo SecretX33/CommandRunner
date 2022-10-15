@@ -2,7 +2,10 @@ package com.github.secretx33.commandrunner.util
 
 import joptsimple.OptionSet
 import java.lang.invoke.MethodHandles
+import java.time.Duration
 import java.util.Locale
+import java.util.concurrent.ScheduledExecutorService
+import java.util.concurrent.TimeUnit
 
 private val thisClass = MethodHandles.lookup().lookupClass()
 
@@ -24,6 +27,10 @@ inline fun <T> OptionSet.getOrElse(option: String, default: () -> T): T = if (ha
 fun <T> OptionSet.getOrNull(option: String): T? = if (has(option)) get(option) else null
 
 fun <T> unsyncLazy(initializer: () -> T): Lazy<T> = lazy(LazyThreadSafetyMode.NONE, initializer)
+
+fun ScheduledExecutorService.schedule(delay: Duration, runnable: Runnable) {
+    schedule(runnable, delay.toMillis(), TimeUnit.MILLISECONDS)
+}
 
 fun String.capitalize(): String = replaceFirstChar { if (it.isLowerCase()) it.titlecase(Locale.getDefault()) else it.toString() }
 

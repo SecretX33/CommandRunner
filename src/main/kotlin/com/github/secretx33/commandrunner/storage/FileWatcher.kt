@@ -6,6 +6,7 @@ import java.nio.file.Path
 import java.nio.file.WatchEvent
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.CopyOnWriteArrayList
+import java.util.concurrent.Executor
 import java.util.concurrent.TimeUnit
 import kotlin.io.path.Path
 import kotlin.io.path.absolute
@@ -22,7 +23,8 @@ import kotlin.io.path.relativeTo
 class FileWatcher(
     private val basePath: Path,
     autoRegisterNewSubDirectories: Boolean = true,
-) : AbstractFileWatcher(basePath.fileSystem, autoRegisterNewSubDirectories) {
+    taskExecutor: Executor,  // must have at least 2 threads
+) : AbstractFileWatcher(basePath.fileSystem, autoRegisterNewSubDirectories, taskExecutor) {
 
     /** A map of watched locations with corresponding listeners  */
     private val watchedLocations = ConcurrentHashMap<Path, WatchedLocation>()

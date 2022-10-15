@@ -11,13 +11,14 @@ import java.nio.file.SimpleFileVisitor
 import java.nio.file.StandardWatchEventKinds.ENTRY_CREATE
 import java.nio.file.StandardWatchEventKinds.ENTRY_DELETE
 import java.nio.file.StandardWatchEventKinds.ENTRY_MODIFY
+import java.nio.file.StandardWatchEventKinds.OVERFLOW
 import java.nio.file.WatchEvent
 import java.nio.file.WatchKey
 import java.nio.file.WatchService
 import java.nio.file.attribute.BasicFileAttributes
 import java.util.concurrent.CompletableFuture
 import java.util.concurrent.ConcurrentHashMap
-import java.util.concurrent.Executors
+import java.util.concurrent.Executor
 import java.util.concurrent.atomic.AtomicReference
 import kotlin.io.path.ExperimentalPathApi
 import kotlin.io.path.isDirectory
@@ -33,6 +34,7 @@ import kotlin.io.path.visitFileTree
 abstract class AbstractFileWatcher (
     fileSystem: FileSystem,
     private val autoRegisterNewSubDirectories: Boolean,
+    private val taskExecutor: Executor,  // must have at least 2 threads
 ) : AutoCloseable {
 
     private val log = LoggerFactory.getLogger(this::class.java)
@@ -46,11 +48,6 @@ abstract class AbstractFileWatcher (
      * A map of all registered watch keys.
      */
     private val keys = ConcurrentHashMap<WatchKey, Path>()
-
-    /**
-     * The executor responsible handling file events processing.
-     */
-    private val taskExecutor = Executors.newFixedThreadPool(2)
 
     /**
      * The thread currently being used to wait for and process watch events.
@@ -76,7 +73,8 @@ abstract class AbstractFileWatcher (
      * @return the watch key
      * @throws IOException if unable to register
      */
-    private fun register(watchService: WatchService, directory: Path): WatchKey = directory.register(watchService, ENTRY_CREATE, ENTRY_DELETE, ENTRY_MODIFY)
+    private fun register(watchService: WatchService, directory: Path): WatchKey =
+        directory.register(watchService, ENTRY_CREATE, ENTRY_DELETE, ENTRY_MODIFY)
 
     /**
      * Register a watch key recursively in the given directory.
@@ -127,29 +125,27 @@ abstract class AbstractFileWatcher (
                     continue
                 }
 
-                // process each watch event the key has
-                key.pollEvents().asSequence().map { it as WatchEvent<Path> }.forEach { event ->
-                    event.context()?.takeIf { it.nameCount > 0 }
-                        ?.let { directory.resolve(it) }
-                        ?.let { file ->
-                            // if the file is a regular file, send the event on to be processed
-                            if (file.isRegularFile()) {
-                                taskExecutor.execute {
-                                    processEvent(event, file, event.kind().modificationType)
-                                }
-                            }
+                val validFileEvents = (key.pollEvents() as Iterable<WatchEvent<Path>>)
+                    .filter { it.kind() != OVERFLOW && (it.context()?.nameCount ?: 0) > 0 }
+                    .associateWith { directory.resolve(it.context()) }
 
-                            // handle recursive directory creation
-                            if (autoRegisterNewSubDirectories && event.kind() == ENTRY_CREATE) {
-                                try {
-                                    if (file.isDirectory(LinkOption.NOFOLLOW_LINKS)) {
-                                        registerRecursively(file)
-                                    }
-                                } catch (e: IOException) {
-                                    log.error("Failed to register new created directory under a watched folder. Message: ${e.message}", e)
-                                }
+                // process each watch event the key has
+                validFileEvents.forEach { (event, file) ->
+                    // if the file is being deleted or is a regular file, send the event on to be processed
+                    if (event.kind() == ENTRY_DELETE || file.isRegularFile()) {
+                        processEvent(event, file, event.kind().modificationType)
+                    }
+
+                    // handle recursive directory creation
+                    if (autoRegisterNewSubDirectories && event.kind() == ENTRY_CREATE) {
+                        try {
+                            if (file.isDirectory(LinkOption.NOFOLLOW_LINKS)) {
+                                registerRecursively(file)
                             }
+                        } catch (e: IOException) {
+                            log.error("Failed to register new created directory under a watched folder. Message: ${e.message}", e)
                         }
+                    }
                 }
 
                 // reset the key
@@ -171,13 +167,6 @@ abstract class AbstractFileWatcher (
             watchService.close()
         } catch (e: IOException) {
             log.error("An exception has occurred when closing File Watch Service. Message: ${e.message}", e.takeIf { log.isDebugEnabled })
-        }
-
-        try {
-            taskExecutor.shutdownNow()
-        } catch (e: SecurityException) {
-            log.error("Could not correctly finalize tasks scheduled by File Watch Service task executor because we somehow don't have permission", e)
-            throw e
         }
     }
 }

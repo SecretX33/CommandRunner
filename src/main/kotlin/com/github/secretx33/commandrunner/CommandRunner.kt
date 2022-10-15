@@ -13,6 +13,7 @@ import com.github.secretx33.commandrunner.util.ANSI_RESET
 import com.github.secretx33.commandrunner.util.CommandLineRunner
 import com.github.secretx33.commandrunner.util.getTextResource
 import com.github.secretx33.commandrunner.util.isHelp
+import com.github.secretx33.commandrunner.util.schedule
 import com.github.secretx33.commandrunner.util.suffixIfNotEmpty
 import com.github.secretx33.commandrunner.util.unsyncLazy
 import io.github.azagniotov.matcher.AntPathMatcher
@@ -21,6 +22,7 @@ import java.io.File
 import java.lang.invoke.MethodHandles
 import java.nio.file.Path
 import java.time.Duration
+import java.util.concurrent.Executors
 import kotlin.io.path.absolute
 import kotlin.io.path.extension
 import kotlin.io.path.fileSize
@@ -33,6 +35,7 @@ import kotlin.system.measureNanoTime
 private val log = LoggerFactory.getLogger(MethodHandles.lookup().lookupClass())
 
 private lateinit var fileWatcher: FileWatcher
+private val taskExecutor = unsyncLazy { Executors.newScheduledThreadPool(2) }
 
 fun runCommandParser(args: Array<String>) {
     var finalizeAppThrowable: FinalizeAppThrowable? = null
@@ -55,7 +58,7 @@ private fun execute(args: Array<String>) {
     }
     log.debug("Args = ${args.joinToString()}\noptions = ${options.asMap()}")
 
-    val settings = buildSettings(options)
+    val settings = parseToSettings(options)
     initiateFileWatcher(settings)
     printGreetings(settings)
 
@@ -68,15 +71,15 @@ fun initiateFileWatcher(settings: Settings) {
         .apply { if (settings.ignoreCase) withIgnoreCase() }
         .build()
 
-    fileWatcher = FileWatcher(settings.folder)
+    fileWatcher = FileWatcher(settings.folder, taskExecutor = taskExecutor.value)
 
     fileWatcher.withRootWatcher { path, fileModificationType ->
-        if (!shouldRun(path, fileModificationType, settings, pathMatcher)) return@withRootWatcher
+        val start = System.nanoTime()
+        taskExecutor.value.schedule(settings.commandDelay) {
+            if (!shouldRun(path, fileModificationType, settings, pathMatcher)) return@schedule
 
-        settings.commands.forEach {
-            log.debug("Executing command '{}' for file '{}'", it.value, path)
-            val parsedCommand = parseCommand(it, path, settings)
-            CommandLineRunner(settings.folder, parsedCommand).run()
+            log.trace("Scheduled task ran after {}ms", Duration.ofNanos(System.nanoTime() - start).toMillis())
+            executeCommands(path, settings)
         }
     }
 }
@@ -99,6 +102,15 @@ private fun shouldRun(
         && (!settings.hasFilter || settings.filter.any { pathMatcher.isMatch(it, normalizedPath) })
         && (!fileModificationType.isCreateOrModify || settings.fileMinSizeBytes == null || fileSize >= settings.fileMinSizeBytes)
         && (!fileModificationType.isCreateOrModify || settings.fileMaxSizeBytes == null || fileSize <= settings.fileMaxSizeBytes)
+}
+
+private fun executeCommands(
+    file: Path,
+    settings: Settings,
+) = settings.commands.forEach {
+    log.debug("Executing command '{}' for file '{}'", it.value, file)
+    val parsedCommand = parseCommand(it, file, settings)
+    CommandLineRunner(settings.folder, parsedCommand).run()
 }
 
 private fun parseCommand(
@@ -142,6 +154,9 @@ private fun finalize() {
     val finalizeTime = measureNanoTime {
         if (::fileWatcher.isInitialized) {
             fileWatcher.close()
+        }
+        if (taskExecutor.isInitialized() && !taskExecutor.value.isShutdown) {
+            taskExecutor.value.shutdownNow()
         }
     }
     log.debug("Finalization took ${Duration.ofNanos(finalizeTime).toMillis()}ms")

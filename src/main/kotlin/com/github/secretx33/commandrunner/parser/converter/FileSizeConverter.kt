@@ -1,4 +1,4 @@
-package com.github.secretx33.commandrunner.util
+package com.github.secretx33.commandrunner.parser.converter
 
 import com.github.secretx33.commandrunner.util.unit.DataSize
 import joptsimple.ValueConversionException
@@ -16,5 +16,5 @@ object FileSizeConverter : ValueConverter<DataSize> {
 
     override fun valueType(): Class<out DataSize> = DataSize::class.java
 
-    override fun valuePattern(): String = "filesize unit"
+    override fun valuePattern(): String = "filesize [unit]"
 }
