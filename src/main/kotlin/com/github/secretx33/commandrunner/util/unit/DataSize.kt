@@ -96,6 +96,11 @@ class DataSize(private val bytes: Long) : Comparable<DataSize>, Serializable {
 
     companion object {
         /**
+         * Defaults to `KILOBYTES` if the default unit is not specified.
+         */
+        val DEFAULT_UNIT = DataUnit.KILOBYTES
+
+        /**
          * Bytes per Kilobyte.
          */
         private const val BYTES_PER_KB: Long = 1024
@@ -180,7 +185,7 @@ class DataSize(private val bytes: Long) : Comparable<DataSize>, Serializable {
          * @param text the text to parse
          * @return the parsed [DataSize]
          */
-        fun parse(text: String, defaultUnit: DataUnit? = null): DataSize =
+        fun parse(text: String, defaultUnit: DataUnit = DEFAULT_UNIT): DataSize =
             try {
                 parseInternal(text, defaultUnit)
             } catch (e: Exception) {
@@ -190,14 +195,14 @@ class DataSize(private val bytes: Long) : Comparable<DataSize>, Serializable {
         /**
          * Does the same thing as [parse], but returns `null` instead of throwing when the parse fails.
          */
-        fun parseOrNull(text: String, defaultUnit: DataUnit? = null): DataSize? =
+        fun parseOrNull(text: String, defaultUnit: DataUnit = DEFAULT_UNIT): DataSize? =
             try {
                 parseInternal(text, defaultUnit)
             } catch (e: Exception) {
                 null
             }
 
-        private fun parseInternal(text: String, defaultUnit: DataUnit? = null): DataSize {
+        private fun parseInternal(text: String, defaultUnit: DataUnit): DataSize {
             val matcher = PATTERN.matchEntire(text.toList().filterNot { it.isWhitespace() }.joinToString(""))
             checkNotNull(matcher) { "Does not match data size pattern" }
             val unit = determineDataUnit(matcher.groups[2]!!.value, defaultUnit)
@@ -205,9 +210,7 @@ class DataSize(private val bytes: Long) : Comparable<DataSize>, Serializable {
             return of(amount, unit)
         }
 
-        private fun determineDataUnit(suffix: String, defaultUnit: DataUnit?): DataUnit {
-            val defaultUnitToUse = defaultUnit ?: DataUnit.BYTES
-            return if (suffix.isNotEmpty()) DataUnit.fromSuffix(suffix) else defaultUnitToUse
-        }
+        private fun determineDataUnit(suffix: String, defaultUnit: DataUnit): DataUnit =
+            if (suffix.isNotEmpty()) DataUnit.fromSuffix(suffix) else defaultUnit
     }
 }

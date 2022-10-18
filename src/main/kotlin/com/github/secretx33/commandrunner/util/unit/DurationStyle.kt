@@ -30,31 +30,31 @@ enum class DurationStyle(pattern: String) {
      * Simple formatting, for example '1s'.
      */
     SIMPLE("^([+-]?\\d+)([a-zA-Z]{0,2})$") {
-        override fun parse(value: String, unit: ChronoUnit?): Duration =
+        override fun parse(value: String, defaultUnit: ChronoUnit): Duration =
             try {
                 val matcher = requireNotNull(matcher(value)) { "'$value' does not match simple duration pattern" }
                 val suffix = matcher.groupValues.getOrNull(2)
-                val unit = if (!suffix.isNullOrEmpty()) Unit.fromSuffix(suffix) else Unit.fromChronoUnit(unit)
+                val unit = if (!suffix.isNullOrEmpty()) Unit.fromSuffix(suffix) else Unit.fromChronoUnit(defaultUnit)
                 unit.parse(matcher.groupValues[1])
             } catch (e: Exception) {
                 throw IllegalArgumentException("'$value' is not a valid simple duration", e)
             }
 
-        override fun print(value: Duration, unit: ChronoUnit?): String = Unit.fromChronoUnit(unit).print(value)
+        override fun print(value: Duration, unit: ChronoUnit): String = Unit.fromChronoUnit(unit).print(value)
     },
 
     /**
      * ISO-8601 formatting.
      */
     ISO8601("^[+-]?[pP].*$") {
-        override fun parse(value: String, unit: ChronoUnit?): Duration =
+        override fun parse(value: String, defaultUnit: ChronoUnit): Duration =
             try {
                 Duration.parse(value)
             } catch (e: Exception) {
                 throw IllegalArgumentException("'$value' is not a valid ISO-8601 duration", e)
             }
 
-        override fun print(value: Duration, unit: ChronoUnit?): String = value.toString()
+        override fun print(value: Duration, unit: ChronoUnit): String = value.toString()
     };
 
     private val pattern: Regex = pattern.toRegex()
@@ -67,19 +67,19 @@ enum class DurationStyle(pattern: String) {
      * Parse the given value to a duration (attemps to autodetects the time unit used on [value]).
      *
      * @param value the value to parse
-     * @param unit the duration unit to use if the value doesn't specify one (`null` will default to ms)
+     * @param defaultUnit the duration unit to use if the value doesn't specify one
      * @return a duration
      */
-    abstract fun parse(value: String, unit: ChronoUnit? = null): Duration
+    abstract fun parse(value: String, defaultUnit: ChronoUnit = DEFAULT_UNIT): Duration
 
     /**
      * Print the specified duration using the given unit.
      *
      * @param value the value to print
-     * @param unit the value to use for printing (`null` will default to ms)
+     * @param unit the value to use for printing
      * @return the printed result
      */
-    abstract fun print(value: Duration, unit: ChronoUnit? = null): String
+    abstract fun print(value: Duration, unit: ChronoUnit = DEFAULT_UNIT): String
 
     /**
      * Units that we support.
@@ -132,12 +132,8 @@ enum class DurationStyle(pattern: String) {
         fun longValue(value: Duration): Long = value.longValue()
 
         companion object {
-            fun fromChronoUnit(chronoUnit: ChronoUnit?): Unit {
-                if (chronoUnit == null) return MILLIS
-
-                return values().firstOrNull { it.chronoUnit == chronoUnit }
-                    ?: throw IllegalArgumentException("Unknown unit $chronoUnit")
-            }
+            fun fromChronoUnit(chronoUnit: ChronoUnit): Unit = values().firstOrNull { it.chronoUnit == chronoUnit }
+                ?: throw IllegalArgumentException("Unknown unit $chronoUnit")
 
             fun fromSuffix(suffix: String): Unit = values().firstOrNull { it.suffix.equals(suffix, ignoreCase = true) }
                 ?: throw IllegalArgumentException("Unknown unit $suffix")
@@ -146,17 +142,21 @@ enum class DurationStyle(pattern: String) {
 
     companion object {
         /**
+         * Defaults to `MILLIS` if the default unit is not specified.
+         */
+        val DEFAULT_UNIT = ChronoUnit.MILLIS
+
+        /**
          * Detect the style then parse the value to return a duration.
          *
          * @param value the value to parse
-         * @param unit the duration unit to use if the value doesn't specify one (`null`
-         * will default to ms)
+         * @param defaultUnit the duration unit to use if the value doesn't specify one
          * @return the parsed duration
          * @throws IllegalArgumentException if the value is not a known style or cannot be
          * parsed
          */
-        fun detectAndParse(value: String, unit: ChronoUnit? = null): Duration =
-            detect(value).parse(value, unit)
+        fun detectAndParse(value: String, defaultUnit: ChronoUnit = DEFAULT_UNIT): Duration =
+            detect(value).parse(value, defaultUnit)
 
         /**
          * Detect the style from the given source value.

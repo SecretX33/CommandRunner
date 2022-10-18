@@ -4,12 +4,13 @@ import com.github.secretx33.commandrunner.util.unit.DurationStyle
 import joptsimple.ValueConversionException
 import joptsimple.ValueConverter
 import java.time.Duration
+import java.time.temporal.ChronoUnit
 
 object DurationConverter : ValueConverter<Duration> {
 
     override fun convert(value: String): Duration =
         try {
-            DurationStyle.detectAndParse(value).also {
+            DurationStyle.detectAndParse(value, defaultUnit = ChronoUnit.MILLIS).also {
                 require(!it.isNegative) { "Invalid duration: '$value'. Must be at least 0." }
             }
         } catch (e: IllegalArgumentException) {
