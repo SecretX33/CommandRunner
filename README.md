@@ -8,6 +8,8 @@ And above all, the possibilities are endless since you can basically use this wi
 
 ## Options
 
+Extensive list of all flags that can be used with this tool.
+
 - `-?`, `--help`: display a list of all program flags with a basic description
 - `-c`, `--command`: specifies a command that will run whenever a file event occur [may be used more than once to run more than one command at a time]
 - `-p`, `--path`: changes the watched folder, by default it watches the current directory
@@ -27,7 +29,7 @@ And above all, the possibilities are endless since you can basically use this wi
 
 ## Placeholders
 
-Additionally, there are many placeholders that can be used in commands. Placeholders are strings that you can use in commands that will be replaced in runtime by their equivalent counterpart in the context of the file event. They are super simple to use, and to make it even clearer, let's not only describe it, but also use an example, assume the following:
+Placeholders are strings that can be used in commands that will be replaced in runtime by their equivalent counterpart in the context of the file event. There are many placeholders that can be used in commands, and they are super simple to explain by example, so let's go with that. Assume the following:
 
 **Watched folder:** `/project`
 
@@ -50,6 +52,18 @@ Then, here's the list with all placeholders and what they would provide:
 Since CommandRunner offer many options, it can be hard to grasp how to properly use them, so here are some examples.
 
 ### Simplest possible command
+```shell
+java -jar CommandRunner.jar -c "echo I just created/modified file '{filename}'"
+```
+
+**Result**
+```
+I just created/modified file 'examplefile.txt'
+```
+
+OBS.: If `--path` is not provided, it'll just watch the current directory.
+
+### Watch a different path
 ```shell
 java -jar CommandRunner.jar -p "~/Documents/MyProject" -c "echo I just created/modified file '{filename}'"
 ```
