@@ -1,8 +1,9 @@
+import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 import org.jetbrains.kotlin.gradle.tasks.KotlinCompile
 
 plugins {
-    id("com.github.johnrengelman.shadow") version "7.1.2"
-    kotlin("jvm") version "1.7.20"
+    id("com.github.johnrengelman.shadow") version "8.1.1"
+    kotlin("jvm") version "2.0.0"
     application
 }
 
@@ -13,11 +14,12 @@ repositories {
     mavenCentral()
 }
 
-val javaVersion = "17"
+val javaVersion = JvmTarget.JVM_21
 
 dependencies {
     implementation(kotlin("stdlib-jdk8"))
-    implementation(platform("org.jetbrains.kotlinx:kotlinx-coroutines-bom:1.6.4"))
+    implementation(platform("org.jetbrains.kotlinx:kotlinx-coroutines-bom:1.8.1"))
+    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-core")
     implementation("net.sf.jopt-simple:jopt-simple:5.0.4")
     implementation("ch.qos.logback:logback-classic:1.4.4")
     implementation("org.codehaus.janino:janino:3.1.8")
@@ -39,13 +41,14 @@ tasks.shadowJar {
 }
 
 tasks.withType<JavaCompile> {
-    sourceCompatibility = javaVersion
-    targetCompatibility = javaVersion
-    options.encoding = "UTF-8"
+    options.apply {
+        release = javaVersion.target.toInt()
+        encoding = "UTF-8"
+    }
 }
 
 tasks.withType<KotlinCompile> {
-    kotlinOptions {
+    compilerOptions {
         freeCompilerArgs = listOf("-Xjsr305=strict", "-Xjvm-default=all")
         jvmTarget = javaVersion
     }
