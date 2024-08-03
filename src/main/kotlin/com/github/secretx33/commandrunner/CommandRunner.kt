@@ -27,9 +27,9 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.asExecutor
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.flow.filter
 import kotlinx.coroutines.job
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.time.debounce
 import org.slf4j.LoggerFactory
 import java.io.File
@@ -93,17 +93,19 @@ fun initiateFileWatcher(settings: Settings) {
 
     val flow = MutableSharedFlow<Pair<Path, FileModificationType>>()
     fileWatcher.withRootWatcher { path, fileModificationType ->
-        runBlocking { flow.emit(path to fileModificationType) }
+        coroutineScope.launch {
+            flow.emit(path to fileModificationType)
+        }
     }
 
     coroutineScope.launch {
-        flow.debounceUniqueBy(50.milliseconds) { it.first }
+        flow.filter { (path, fileModificationType) ->
+            shouldRun(path, fileModificationType, settings, pathMatcher).also {
+                if (!it && log.isTraceEnabled) log.trace("Skipping file '$path' because it does not match the settings")
+            }
+        }.debounceUniqueBy(50.milliseconds) { it.first }
             .debounce(settings.commandDelay)
             .collectLatest { (path, fileModificationType) ->
-                if (!shouldRun(path, fileModificationType, settings, pathMatcher)) {
-                    if (log.isTraceEnabled) log.trace("Skipping file '$path' because it does not match the settings")
-                    return@collectLatest
-                }
                 log.info("File '$path' was '${fileModificationType.name.lowercase()}', running commands")
                 executeCommands(path, settings)
             }

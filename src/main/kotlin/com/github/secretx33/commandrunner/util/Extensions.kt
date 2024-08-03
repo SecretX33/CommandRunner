@@ -6,7 +6,6 @@ import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.channelFlow
-import kotlinx.coroutines.job
 import kotlinx.coroutines.launch
 import java.lang.invoke.MethodHandles
 import java.time.Duration
@@ -69,22 +68,22 @@ fun <T, U> Flow<T>.debounceUniqueBy(
     areEquals: (current: U, previous: U?) -> Boolean = { a, b -> a == b },
     selector: (T) -> U,
 ): Flow<T> {
-    var lastValue: T? = null
+    val lastValue = AtomicReference<T?>()
     val emitNextTask = AtomicReference<Job?>()
     return channelFlow {
         coroutineScope {
-            collect {
-                val previousValue = lastValue
-                lastValue = it
-                if (areEquals(selector(it), previousValue?.let(selector))) return@collect
+            collect { value ->
+                val previousValue = lastValue.get()
+                lastValue.set(value)
+                if (areEquals(selector(value), previousValue?.let(selector))) return@collect
 
-                emitNextTask.getAndSet(
-                    launch {
-                        coroutineContext.job.invokeOnCompletion { emitNextTask.compareAndSet(coroutineContext.job, null) }
-                        delay(delay)
-                        send(it)
-                    }
-                )?.cancel()
+                val job = launch {
+                    delay(delay)
+                    lastValue.compareAndSet(value, null)
+                    send(value)
+                }
+                emitNextTask.getAndSet(job)?.cancel()
+                job.invokeOnCompletion { emitNextTask.compareAndSet(job, null) }
             }
         }
     }
