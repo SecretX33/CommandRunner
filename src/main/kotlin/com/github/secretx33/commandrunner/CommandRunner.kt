@@ -1,3 +1,5 @@
+@file:OptIn(ExperimentalCoroutinesApi::class, FlowPreview::class)
+
 package com.github.secretx33.commandrunner
 
 import com.github.secretx33.commandrunner.exception.FinalizeAppThrowable
@@ -11,18 +13,31 @@ import com.github.secretx33.commandrunner.util.ANSI_GREEN
 import com.github.secretx33.commandrunner.util.ANSI_PURPLE
 import com.github.secretx33.commandrunner.util.ANSI_RESET
 import com.github.secretx33.commandrunner.util.CommandLineRunner
+import com.github.secretx33.commandrunner.util.debounceUniqueBy
 import com.github.secretx33.commandrunner.util.getTextResource
 import com.github.secretx33.commandrunner.util.isHelp
-import com.github.secretx33.commandrunner.util.schedule
 import com.github.secretx33.commandrunner.util.suffixIfNotEmpty
 import com.github.secretx33.commandrunner.util.unsyncLazy
 import io.github.azagniotov.matcher.AntPathMatcher
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.FlowPreview
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.asExecutor
+import kotlinx.coroutines.flow.MutableSharedFlow
+import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.job
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.time.debounce
 import org.slf4j.LoggerFactory
 import java.io.File
 import java.lang.invoke.MethodHandles
 import java.nio.file.Path
 import java.time.Duration
-import java.util.concurrent.Executors
+import java.time.LocalDateTime
+import java.time.format.DateTimeFormatter
 import kotlin.io.path.absolute
 import kotlin.io.path.extension
 import kotlin.io.path.fileSize
@@ -31,11 +46,14 @@ import kotlin.io.path.nameWithoutExtension
 import kotlin.io.path.pathString
 import kotlin.system.exitProcess
 import kotlin.system.measureNanoTime
+import kotlin.time.Duration.Companion.milliseconds
 
 private val log = LoggerFactory.getLogger(MethodHandles.lookup().lookupClass())
 
 private lateinit var fileWatcher: FileWatcher
-private val taskExecutor = unsyncLazy { Executors.newScheduledThreadPool(2) }
+private val coroutineScope = CoroutineScope(Dispatchers.IO + SupervisorJob())
+private val dateTimeFormatter = DateTimeFormatter.ofPattern("yyyy-MM-dd'T'HH:mm:ss")
+private val nowWithCustomPatternRegex = "\\{now:([^\\}]+)\\}".toRegex()
 
 fun runCommandParser(args: Array<String>) {
     var finalizeAppThrowable: FinalizeAppThrowable? = null
@@ -56,7 +74,7 @@ private fun execute(args: Array<String>) {
         // Do not proceed if the user is just asking for help
         exitApp()
     }
-    log.debug("Args = ${args.joinToString()}\noptions = ${options.asMap()}")
+    if (log.isDebugEnabled) log.debug("Args = ${args.joinToString()}\noptions = ${options.asMap()}")
 
     val settings = parseToSettings(options)
     initiateFileWatcher(settings)
@@ -71,16 +89,24 @@ fun initiateFileWatcher(settings: Settings) {
         .apply { if (settings.ignoreCase) withIgnoreCase() }
         .build()
 
-    fileWatcher = FileWatcher(settings.folder, taskExecutor = taskExecutor.value)
+    fileWatcher = FileWatcher(settings.folder, taskExecutor = Dispatchers.IO.limitedParallelism(2).asExecutor())
 
+    val flow = MutableSharedFlow<Pair<Path, FileModificationType>>()
     fileWatcher.withRootWatcher { path, fileModificationType ->
-        val start = System.nanoTime()
-        taskExecutor.value.schedule(settings.commandDelay) {
-            if (!shouldRun(path, fileModificationType, settings, pathMatcher)) return@schedule
+        runBlocking { flow.emit(path to fileModificationType) }
+    }
 
-            log.trace("Scheduled task ran after {}ms", Duration.ofNanos(System.nanoTime() - start).toMillis())
-            executeCommands(path, settings)
-        }
+    coroutineScope.launch {
+        flow.debounceUniqueBy(50.milliseconds) { it.first }
+            .debounce(settings.commandDelay)
+            .collectLatest { (path, fileModificationType) ->
+                if (!shouldRun(path, fileModificationType, settings, pathMatcher)) {
+                    if (log.isTraceEnabled) log.trace("Skipping file '$path' because it does not match the settings")
+                    return@collectLatest
+                }
+                log.info("File '$path' was '${fileModificationType.name.lowercase()}', running commands")
+                executeCommands(path, settings)
+            }
     }
 }
 
@@ -121,18 +147,29 @@ private fun parseCommand(
     val absoluteFile = settings.folder.resolve(file).absolute()
     val absolutePath = absoluteFile.parent?.pathString.orEmpty()
     val relativePath = file.parent?.pathString.orEmpty()
+    val now = LocalDateTime.now()
 
-    val parsedCommand = command.value
-        .replace("{filename}", file.name)
-        .replace("{filenamenoextension}", file.nameWithoutExtension)
-        .replace("{fileextension}", file.extension)
-        .replace("{filepath}", absoluteFile.pathString)
-        .replace("{path}", absolutePath)
-        .replace("{path+}", absolutePath.suffixIfNotEmpty(File.separator))
-        .replace("{relativefilepath}", file.pathString)
-        .replace("{relativepath}", relativePath)
-        .replace("{relativepath+}", relativePath.suffixIfNotEmpty(File.separator))
-        .replace("{pathseparator}", File.separator)
+    val placeholders = mapOf(
+        "{filename}" to file.name,
+        "{filenamenoextension}" to file.nameWithoutExtension,
+        "{fileextension}" to file.extension,
+        "{filepath}" to absoluteFile.pathString,
+        "{path}" to absolutePath,
+        "{path+}" to absolutePath.suffixIfNotEmpty(File.separator),
+        "{relativefilepath}" to file.pathString,
+        "{relativepath}" to relativePath,
+        "{relativepath+}" to relativePath.suffixIfNotEmpty(File.separator),
+        "{pathseparator}" to File.separator,
+        "{now}" to now.format(dateTimeFormatter),
+    )
+
+    val parsedCommand = placeholders.entries.fold(command.value) { acc, (placeholder, value) ->
+        acc.replace(placeholder, value)
+    }.let {
+        nowWithCustomPatternRegex.replace(it) { matchResult ->
+            now.format(DateTimeFormatter.ofPattern(matchResult.groupValues[1]))
+        }
+    }
     return ParsedCommand(parsedCommand)
 }
 
@@ -152,12 +189,8 @@ private fun String.normalizeWindowsPathSeparator(): String = when (CURRENT_OS) {
 private fun finalize() {
     log.debug("Initiated execution of finalize tasks")
     val finalizeTime = measureNanoTime {
-        if (::fileWatcher.isInitialized) {
-            fileWatcher.close()
-        }
-        if (taskExecutor.isInitialized() && !taskExecutor.value.isShutdown) {
-            taskExecutor.value.shutdownNow()
-        }
+        if (::fileWatcher.isInitialized) fileWatcher.close()
+        coroutineScope.coroutineContext.job.cancel()
     }
     log.debug("Finalization took ${Duration.ofNanos(finalizeTime).toMillis()}ms")
 }
